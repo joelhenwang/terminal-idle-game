@@ -15,6 +15,8 @@ type UIState int
 const (
 	MainMenu UIState = iota
 	UpgradeConfirm
+	GeneratorsMenu
+	BuyGeneratorConfirm
 )
 
 func doTick() tea.Cmd {
@@ -24,17 +26,18 @@ func doTick() tea.Cmd {
 }
 
 type model struct {
-	cursor   int
-	choices  []string
-	selected map[int]struct{}
-	game     *game.Game
-	uiState  UIState
-	message  string
+	cursor            int
+	choices           []string
+	selected          map[int]struct{}
+	game              *game.Game
+	uiState           UIState
+	message           string
+	selectedGenerator int
 }
 
 func initialModel() model {
 	return model{
-		choices: []string{"Pause", "Upgrade", "Quit"},
+		choices: []string{"Pause", "Upgrade", "Generators", "Quit"},
 		game:    game.New(),
 		uiState: MainMenu,
 		// A map which indicates which choices are selected. We're using
@@ -52,6 +55,10 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case TickMsg:
 		model.game.Tick()
+		// Clear message after a few seconds
+		if model.message != "" {
+			// Message will be cleared on next interaction
+		}
 		return model, doTick()
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -66,6 +73,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				model.cursor++
 			}
 		case "enter", " ":
+			model.message = "" // Clear message on any action
 			switch model.uiState {
 			case MainMenu:
 				switch model.choices[model.cursor] {
@@ -78,6 +86,14 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case "Upgrade":
 					model.choices = []string{"Yes", "No", "Cancel"}
 					model.uiState = UpgradeConfirm
+					model.cursor = 0
+				case "Generators":
+					model.choices = []string{}
+					for _, gen := range model.game.Generators {
+						model.choices = append(model.choices, gen.Name)
+					}
+					model.choices = append(model.choices, "Back")
+					model.uiState = GeneratorsMenu
 					model.cursor = 0
 				case "Quit":
 					return model, tea.Quit
@@ -94,7 +110,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if model.game.IsPaused() {
 						pauseLabel = "Resume"
 					}
-					model.choices = []string{pauseLabel, "Upgrade", "Quit"}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
 					model.uiState = MainMenu
 					model.cursor = 0
 				case "No", "Cancel":
@@ -102,8 +118,49 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if model.game.IsPaused() {
 						pauseLabel = "Resume"
 					}
-					model.choices = []string{pauseLabel, "Upgrade", "Quit"}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
 					model.uiState = MainMenu
+					model.cursor = 0
+				}
+			case GeneratorsMenu:
+				if model.choices[model.cursor] == "Back" {
+					pauseLabel := "Pause"
+					if model.game.IsPaused() {
+						pauseLabel = "Resume"
+					}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
+					model.uiState = MainMenu
+					model.cursor = 0
+				} else {
+					model.selectedGenerator = model.cursor
+					model.choices = []string{"Buy", "Cancel"}
+					model.uiState = BuyGeneratorConfirm
+					model.cursor = 0
+				}
+			case BuyGeneratorConfirm:
+				switch model.choices[model.cursor] {
+				case "Buy":
+					if model.game.BuyGenerator(model.selectedGenerator) {
+						gen := model.game.Generators[model.selectedGenerator]
+						model.message = fmt.Sprintf("Bought %s! Now level %d", gen.Name, gen.Level)
+					} else {
+						gen := model.game.Generators[model.selectedGenerator]
+						model.message = fmt.Sprintf("Not enough score! Need %d points", gen.Cost())
+					}
+					model.choices = []string{}
+					for _, gen := range model.game.Generators {
+						model.choices = append(model.choices, gen.Name)
+					}
+					model.choices = append(model.choices, "Back")
+					model.uiState = GeneratorsMenu
+					model.cursor = 0
+				case "Cancel":
+					model.choices = []string{}
+					for _, gen := range model.game.Generators {
+						model.choices = append(model.choices, gen.Name)
+					}
+					model.choices = append(model.choices, "Back")
+					model.uiState = GeneratorsMenu
 					model.cursor = 0
 				}
 			}
@@ -115,8 +172,9 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (model model) View() string {
 	title := "\nTerminal Idle Game\n"
-	stats := fmt.Sprintf("| Score: %d | Upgrades: %d | Rate: %d/s |\n", model.game.Score, model.game.NumUpgrades, model.game.Summator)
-	breakLine := "----------------------------------------"
+	stats := fmt.Sprintf("| Score: %d | Upgrades: %d | Base Rate: %d/s | Total Rate: %d/s |\n", 
+		model.game.Score, model.game.NumUpgrades, model.game.Summator, model.game.TotalProduction())
+	breakLine := "=========================================="
 
 	s := title + breakLine + "\n" + stats + breakLine + "\n\n"
 
@@ -127,8 +185,29 @@ func (model model) View() string {
 
 	// Show upgrade cost in upgrade confirm screen
 	if model.uiState == UpgradeConfirm {
-		s += fmt.Sprintf("Upgrade Cost: %d points\n", model.game.UpgradeCost())
+		s += fmt.Sprintf("Upgrade Cost: %d points (doubles base rate)\n", model.game.UpgradeCost())
 		s += fmt.Sprintf("Current Score: %d points\n\n", model.game.Score)
+	}
+
+	// Show generator details in generators menu
+	if model.uiState == GeneratorsMenu {
+		s += "GENERATORS:\n"
+		for _, gen := range model.game.Generators {
+			s += fmt.Sprintf("  %s - Level %d - Produces %d/s - Cost: %d\n", 
+				gen.Name, gen.Level, gen.Output(), gen.Cost())
+		}
+		s += "\n"
+	}
+
+	// Show selected generator details in buy confirm screen
+	if model.uiState == BuyGeneratorConfirm {
+		gen := model.game.Generators[model.selectedGenerator]
+		s += fmt.Sprintf("Generator: %s\n", gen.Name)
+		s += fmt.Sprintf("Current Level: %d\n", gen.Level)
+		s += fmt.Sprintf("Current Output: %d/s\n", gen.Output())
+		s += fmt.Sprintf("Next Output: %d/s\n", gen.BaseOutput*(gen.Level+1))
+		s += fmt.Sprintf("Cost: %d points\n", gen.Cost())
+		s += fmt.Sprintf("Your Score: %d points\n\n", model.game.Score)
 	}
 
 	for i, choice := range model.choices {
@@ -148,7 +227,7 @@ func (model model) View() string {
 	}
 	s += "State: " + stateStr + "\n"
 
-	s += "\nPress q to quit.\n"
+	s += "\nPress q to quit. Use arrow keys or j/k to navigate.\n"
 
 	return s
 }

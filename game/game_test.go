@@ -304,3 +304,107 @@ func TestIsPaused(t *testing.T) {
 		})
 	}
 }
+
+func TestBuyGenerator(t *testing.T) {
+	tests := []struct {
+		name            string
+		initialScore    int
+		generatorIndex  int
+		expectedSuccess bool
+		expectedScore   int
+		expectedLevel   int
+	}{
+		{
+			name:            "Successful purchase",
+			initialScore:    100,
+			generatorIndex:  0,
+			expectedSuccess: true,
+			expectedScore:   85, // 100 - 15
+			expectedLevel:   1,
+		},
+		{
+			name:            "Insufficient funds",
+			initialScore:    10,
+			generatorIndex:  0,
+			expectedSuccess: false,
+			expectedScore:   10,
+			expectedLevel:   0,
+		},
+		{
+			name:            "Invalid index negative",
+			initialScore:    100,
+			generatorIndex:  -1,
+			expectedSuccess: false,
+			expectedScore:   100,
+			expectedLevel:   0,
+		},
+		{
+			name:            "Invalid index too high",
+			initialScore:    100,
+			generatorIndex:  10,
+			expectedSuccess: false,
+			expectedScore:   100,
+			expectedLevel:   0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			g := New()
+			g.Score = tt.initialScore
+			success := g.BuyGenerator(tt.generatorIndex)
+			if success != tt.expectedSuccess {
+				t.Errorf("Expected BuyGenerator() = %v, got %v", tt.expectedSuccess, success)
+			}
+			if g.Score != tt.expectedScore {
+				t.Errorf("Expected score %d, got %d", tt.expectedScore, g.Score)
+			}
+			if tt.generatorIndex >= 0 && tt.generatorIndex < len(g.Generators) {
+				if g.Generators[tt.generatorIndex].Level != tt.expectedLevel {
+					t.Errorf("Expected generator level %d, got %d", tt.expectedLevel, g.Generators[tt.generatorIndex].Level)
+				}
+			}
+		})
+	}
+}
+
+func TestTotalProduction(t *testing.T) {
+	g := New()
+	
+	// Initially only summator produces
+	expected := g.Summator
+	if got := g.TotalProduction(); got != expected {
+		t.Errorf("Expected total production %d, got %d", expected, got)
+	}
+
+	// Buy first generator
+	g.Score = 100
+	g.BuyGenerator(0)
+	expected = g.Summator + g.Generators[0].Output()
+	if got := g.TotalProduction(); got != expected {
+		t.Errorf("Expected total production %d, got %d", expected, got)
+	}
+
+	// Buy second generator
+	g.Score = 200
+	g.BuyGenerator(1)
+	expected = g.Summator + g.Generators[0].Output() + g.Generators[1].Output()
+	if got := g.TotalProduction(); got != expected {
+		t.Errorf("Expected total production %d, got %d", expected, got)
+	}
+}
+
+func TestTickWithGenerators(t *testing.T) {
+	g := New()
+	g.Score = 100
+	g.BuyGenerator(0) // Buy clicker (produces 1/s)
+	
+	initialScore := g.Score
+	g.Tick()
+	
+	expectedScore := initialScore + g.Summator + 1
+	if g.Score != expectedScore {
+		t.Errorf("Expected score %d after tick with generator, got %d", expectedScore, g.Score)
+	}
+}
+

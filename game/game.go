@@ -14,6 +14,7 @@ type Game struct {
 	NumUpgrades int
 	Summator    int
 	State       State
+	Generators  []*Generator
 }
 
 // New creates a new game with default values
@@ -23,6 +24,12 @@ func New() *Game {
 		NumUpgrades: 0,
 		Summator:    2,
 		State:       Running,
+		Generators: []*Generator{
+			NewGenerator("Clicker", 15, 1),
+			NewGenerator("Farm", 100, 5),
+			NewGenerator("Mine", 500, 20),
+			NewGenerator("Factory", 2000, 50),
+		},
 	}
 }
 
@@ -30,6 +37,10 @@ func New() *Game {
 func (g *Game) Tick() {
 	if g.State == Running {
 		g.Score += g.Summator
+		// Add production from generators
+		for _, gen := range g.Generators {
+			g.Score += gen.Output()
+		}
 	}
 }
 
@@ -72,3 +83,28 @@ func (g *Game) IsRunning() bool {
 func (g *Game) IsPaused() bool {
 	return g.State == Paused
 }
+
+// BuyGenerator attempts to buy a generator upgrade and returns true if successful
+func (g *Game) BuyGenerator(index int) bool {
+	if index < 0 || index >= len(g.Generators) {
+		return false
+	}
+	gen := g.Generators[index]
+	cost := gen.Cost()
+	if g.Score >= cost {
+		g.Score -= cost
+		gen.Upgrade()
+		return true
+	}
+	return false
+}
+
+// TotalProduction returns the total production rate per tick
+func (g *Game) TotalProduction() int {
+	total := g.Summator
+	for _, gen := range g.Generators {
+		total += gen.Output()
+	}
+	return total
+}
+
