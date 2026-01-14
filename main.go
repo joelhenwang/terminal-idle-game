@@ -35,9 +35,41 @@ type model struct {
 	selectedGenerator int
 }
 
+// buildMainMenuChoices returns the main menu choices with correct pause/resume label
+func (m *model) buildMainMenuChoices() []string {
+	pauseLabel := "Pause"
+	if m.game.IsPaused() {
+		pauseLabel = "Resume"
+	}
+	return []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
+}
+
+// buildGeneratorsMenuChoices returns the generators menu choices
+func (m *model) buildGeneratorsMenuChoices() []string {
+	choices := []string{}
+	for _, gen := range m.game.Generators {
+		choices = append(choices, gen.Name)
+	}
+	choices = append(choices, "Back")
+	return choices
+}
+
+// returnToMainMenu returns the model to the main menu state
+func (m *model) returnToMainMenu() {
+	m.choices = m.buildMainMenuChoices()
+	m.uiState = MainMenu
+	m.cursor = 0
+}
+
+// returnToGeneratorsMenu returns the model to the generators menu state
+func (m *model) returnToGeneratorsMenu() {
+	m.choices = m.buildGeneratorsMenuChoices()
+	m.uiState = GeneratorsMenu
+	m.cursor = 0
+}
+
 func initialModel() model {
 	m := model{
-		choices: []string{"Pause", "Upgrade", "Generators", "Save", "Load", "Quit"},
 		game:    game.New(),
 		uiState: MainMenu,
 		// A map which indicates which choices are selected. We're using
@@ -45,6 +77,8 @@ func initialModel() model {
 		// of the `choices` slice, above.
 		selected: make(map[int]struct{}),
 	}
+	
+	m.choices = m.buildMainMenuChoices()
 	
 	// Try to auto-load on startup
 	saveFile := game.GetDefaultSaveFile()
@@ -96,13 +130,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					model.uiState = UpgradeConfirm
 					model.cursor = 0
 				case "Generators":
-					model.choices = []string{}
-					for _, gen := range model.game.Generators {
-						model.choices = append(model.choices, gen.Name)
-					}
-					model.choices = append(model.choices, "Back")
-					model.uiState = GeneratorsMenu
-					model.cursor = 0
+					model.returnToGeneratorsMenu()
 				case "Save":
 					saveFile := game.GetDefaultSaveFile()
 					if err := model.game.Save(saveFile); err != nil {
@@ -117,11 +145,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						model.message = "Game loaded successfully!"
 						// Update pause button if needed
-						if model.game.IsPaused() {
-							model.choices[0] = "Resume"
-						} else {
-							model.choices[0] = "Pause"
-						}
+						model.choices = model.buildMainMenuChoices()
 					}
 				case "Quit":
 					return model, tea.Quit
@@ -134,31 +158,13 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					} else {
 						model.message = fmt.Sprintf("Not enough score! Need %d points", model.game.UpgradeCost())
 					}
-					pauseLabel := "Pause"
-					if model.game.IsPaused() {
-						pauseLabel = "Resume"
-					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
-					model.uiState = MainMenu
-					model.cursor = 0
+					model.returnToMainMenu()
 				case "No", "Cancel":
-					pauseLabel := "Pause"
-					if model.game.IsPaused() {
-						pauseLabel = "Resume"
-					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
-					model.uiState = MainMenu
-					model.cursor = 0
+					model.returnToMainMenu()
 				}
 			case GeneratorsMenu:
 				if model.choices[model.cursor] == "Back" {
-					pauseLabel := "Pause"
-					if model.game.IsPaused() {
-						pauseLabel = "Resume"
-					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
-					model.uiState = MainMenu
-					model.cursor = 0
+					model.returnToMainMenu()
 				} else {
 					model.selectedGenerator = model.cursor
 					model.choices = []string{"Buy", "Cancel"}
@@ -175,21 +181,9 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						gen := model.game.Generators[model.selectedGenerator]
 						model.message = fmt.Sprintf("Not enough score! Need %d points", gen.Cost())
 					}
-					model.choices = []string{}
-					for _, gen := range model.game.Generators {
-						model.choices = append(model.choices, gen.Name)
-					}
-					model.choices = append(model.choices, "Back")
-					model.uiState = GeneratorsMenu
-					model.cursor = 0
+					model.returnToGeneratorsMenu()
 				case "Cancel":
-					model.choices = []string{}
-					for _, gen := range model.game.Generators {
-						model.choices = append(model.choices, gen.Name)
-					}
-					model.choices = append(model.choices, "Back")
-					model.uiState = GeneratorsMenu
-					model.cursor = 0
+					model.returnToGeneratorsMenu()
 				}
 			}
 		}
