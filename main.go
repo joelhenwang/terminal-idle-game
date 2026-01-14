@@ -36,8 +36,8 @@ type model struct {
 }
 
 func initialModel() model {
-	return model{
-		choices: []string{"Pause", "Upgrade", "Generators", "Quit"},
+	m := model{
+		choices: []string{"Pause", "Upgrade", "Generators", "Save", "Load", "Quit"},
 		game:    game.New(),
 		uiState: MainMenu,
 		// A map which indicates which choices are selected. We're using
@@ -45,6 +45,14 @@ func initialModel() model {
 		// of the `choices` slice, above.
 		selected: make(map[int]struct{}),
 	}
+	
+	// Try to auto-load on startup
+	saveFile := game.GetDefaultSaveFile()
+	if err := m.game.Load(saveFile); err == nil {
+		m.message = "Game loaded successfully!"
+	}
+	
+	return m
 }
 
 func (model model) Init() tea.Cmd {
@@ -95,6 +103,26 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					model.choices = append(model.choices, "Back")
 					model.uiState = GeneratorsMenu
 					model.cursor = 0
+				case "Save":
+					saveFile := game.GetDefaultSaveFile()
+					if err := model.game.Save(saveFile); err != nil {
+						model.message = fmt.Sprintf("Failed to save: %v", err)
+					} else {
+						model.message = "Game saved successfully!"
+					}
+				case "Load":
+					saveFile := game.GetDefaultSaveFile()
+					if err := model.game.Load(saveFile); err != nil {
+						model.message = fmt.Sprintf("Failed to load: %v", err)
+					} else {
+						model.message = "Game loaded successfully!"
+						// Update pause button if needed
+						if model.game.IsPaused() {
+							model.choices[0] = "Resume"
+						} else {
+							model.choices[0] = "Pause"
+						}
+					}
 				case "Quit":
 					return model, tea.Quit
 				}
@@ -110,7 +138,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if model.game.IsPaused() {
 						pauseLabel = "Resume"
 					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
 					model.uiState = MainMenu
 					model.cursor = 0
 				case "No", "Cancel":
@@ -118,7 +146,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if model.game.IsPaused() {
 						pauseLabel = "Resume"
 					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
 					model.uiState = MainMenu
 					model.cursor = 0
 				}
@@ -128,7 +156,7 @@ func (model model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if model.game.IsPaused() {
 						pauseLabel = "Resume"
 					}
-					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Quit"}
+					model.choices = []string{pauseLabel, "Upgrade", "Generators", "Save", "Load", "Quit"}
 					model.uiState = MainMenu
 					model.cursor = 0
 				} else {
